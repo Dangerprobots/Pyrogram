@@ -23,7 +23,6 @@ from typing import Union, List
 import pyrogram
 from pyrogram.api import functions
 from pyrogram.client.ext import utils
-from pyrogram.errors import FloodWait
 from ...ext import BaseClient
 
 log = logging.getLogger(__name__)
@@ -85,28 +84,21 @@ class GetHistory(BaseClient):
 
         offset_id = offset_id or (1 if reverse else 0)
 
-        while True:
-            try:
-                messages = await utils.parse_messages(
-                    self,
-                    await self.send(
-                        functions.messages.GetHistory(
-                            peer=await self.resolve_peer(chat_id),
-                            offset_id=offset_id,
-                            offset_date=offset_date,
-                            add_offset=offset * (-1 if reverse else 1) - (limit if reverse else 0),
-                            limit=limit,
-                            max_id=0,
-                            min_id=0,
-                            hash=0
-                        )
-                    )
+        messages = await utils.parse_messages(
+            self,
+            await self.send(
+                functions.messages.GetHistory(
+                    peer=await self.resolve_peer(chat_id),
+                    offset_id=offset_id,
+                    offset_date=offset_date,
+                    add_offset=offset * (-1 if reverse else 1) - (limit if reverse else 0),
+                    limit=limit,
+                    max_id=0,
+                    min_id=0,
+                    hash=0
                 )
-            except FloodWait as e:
-                log.warning("Sleeping for {}s".format(e.x))
-                await asyncio.sleep(e.x)
-            else:
-                break
+            )
+        )
 
         if reverse:
             messages.reverse()
