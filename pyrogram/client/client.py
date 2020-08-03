@@ -17,19 +17,19 @@
 #  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
 
 import asyncio
+import io
 import logging
 import math
 import os
 import re
 import shutil
 import tempfile
-import time
 from configparser import ConfigParser
 from hashlib import sha256, md5
-from importlib import import_module, reload
+from importlib import import_module
 from pathlib import Path
 from signal import signal, SIGINT, SIGTERM, SIGABRT
-from typing import Union, List
+from typing import Union, List, BinaryIO
 
 from pyrogram.api import functions, types
 from pyrogram.api.core import TLObject
@@ -39,8 +39,9 @@ from pyrogram.client.methods.password.utils import compute_check
 from pyrogram.crypto import AES
 from pyrogram.errors import (
     PhoneMigrate, NetworkMigrate, SessionPasswordNeeded,
-    FloodWait, PeerIdInvalid, VolumeLocNotFound, UserMigrate, ChannelPrivate, AuthBytesInvalid,
-    BadRequest)
+    PeerIdInvalid, VolumeLocNotFound, UserMigrate, ChannelPrivate,
+    AuthBytesInvalid, BadRequest
+)
 from pyrogram.session import Auth, Session
 from .ext import utils, Syncer, BaseClient, Dispatcher
 from .ext.utils import ainput
@@ -142,6 +143,11 @@ class Client(Methods, BaseClient):
             Your Smart Plugins settings as dict, e.g.: *dict(root="plugins")*.
             This is an alternative way to setup plugins if you don't want to use the *config.ini* file.
 
+        parse_mode (``str``, *optional*):
+            The parse mode, can be any of: *"combined"*, for the default combined mode. *"markdown"* or *"md"*
+            to force Markdown-only styles. *"html"* to force HTML-only styles. *None* to disable the parser
+            completely.
+
         no_updates (``bool``, *optional*):
             Pass True to completely disable incoming updates for the current session.
             When updates are disabled your client can't receive any new message.
@@ -154,6 +160,12 @@ class Client(Methods, BaseClient):
             download_media, ...) are less prone to throw FloodWait exceptions.
             Only available for users, bots will ignore this parameter.
             Defaults to False (normal session).
+
+        sleep_threshold (``int``, *optional*):
+            Set a sleep threshold for flood wait exceptions happening globally in this client instance, below which any
+            request that raises a flood wait will be automatically invoked again after sleeping for the required amount
+            of time. Flood wait exceptions requiring higher waiting times will be raised.
+            Defaults to 60 (seconds).
     """
 
     def __init__(
@@ -177,8 +189,10 @@ class Client(Methods, BaseClient):
         workdir: str = BaseClient.WORKDIR,
         config_file: str = BaseClient.CONFIG_FILE,
         plugins: dict = None,
+        parse_mode: str = BaseClient.PARSE_MODES[0],
         no_updates: bool = None,
-        takeout: bool = None
+        takeout: bool = None,
+        sleep_threshold: int = Session.SLEEP_THRESHOLD
     ):
         super().__init__()
 
@@ -202,8 +216,10 @@ class Client(Methods, BaseClient):
         self.workdir = Path(workdir)
         self.config_file = Path(config_file)
         self.plugins = plugins
+        self.parse_mode = parse_mode
         self.no_updates = no_updates
         self.takeout = takeout
+        self.sleep_threshold = sleep_threshold
 
         if isinstance(session_name, str):
             if session_name == ":memory:" or len(session_name) >= MemoryStorage.SESSION_STRING_SIZE:
@@ -313,7 +329,7 @@ class Client(Methods, BaseClient):
             for _ in range(Client.UPDATES_WORKERS):
                 self.updates_worker_tasks.append(
                     asyncio.ensure_future(self.updates_worker())
-            )
+                )
 
         logging.info("Started {} UpdatesWorkerTasks".format(Client.UPDATES_WORKERS))
 
@@ -682,9 +698,6 @@ class Client(Methods, BaseClient):
                 print(e.MESSAGE)
                 self.phone_number = None
                 self.bot_token = None
-            except FloodWait as e:
-                print(e.MESSAGE.format(x=e.x))
-                time.sleep(e.x)
             else:
                 break
 
@@ -733,9 +746,6 @@ class Client(Methods, BaseClient):
                                         return await self.recover_password(recovery_code)
                                     except BadRequest as e:
                                         print(e.MESSAGE)
-                                    except FloodWait as e:
-                                        print(e.MESSAGE.format(x=e.x))
-                                        time.sleep(e.x)
                                     except Exception as e:
                                         log.error(e, exc_info=True)
                                         raise
@@ -746,12 +756,6 @@ class Client(Methods, BaseClient):
                     except BadRequest as e:
                         print(e.MESSAGE)
                         self.password = None
-                    except FloodWait as e:
-                        print(e.MESSAGE.format(x=e.x))
-                        time.sleep(e.x)
-            except FloodWait as e:
-                print(e.MESSAGE.format(x=e.x))
-                time.sleep(e.x)
             else:
                 break
 
@@ -771,9 +775,6 @@ class Client(Methods, BaseClient):
                 )
             except BadRequest as e:
                 print(e.MESSAGE)
-            except FloodWait as e:
-                print(e.MESSAGE.format(x=e.x))
-                time.sleep(e.x)
             else:
                 break
 
@@ -877,6 +878,7 @@ class Client(Methods, BaseClient):
 
                 app.stop()
         """
+
         async def do_it():
             await self.terminate()
             await self.disconnect()
@@ -923,6 +925,7 @@ class Client(Methods, BaseClient):
 
                 app.stop()
         """
+
         async def do_it():
             await self.stop()
             await self.start()
@@ -1149,6 +1152,21 @@ class Client(Methods, BaseClient):
         """
         return self.storage.export_session_string()
 
+    @property
+    def parse_mode(self):
+        return self._parse_mode
+
+    @parse_mode.setter
+    def parse_mode(self, parse_mode: Union[str, None] = "combined"):
+        if parse_mode not in self.PARSE_MODES:
+            raise ValueError('parse_mode must be one of {} or None. Not "{}"'.format(
+                ", ".join('"{}"'.format(m) for m in self.PARSE_MODES[:-1]),
+                parse_mode
+            ))
+
+        self._parse_mode = parse_mode
+
+    # TODO: redundant, remove in next major version
     def set_parse_mode(self, parse_mode: Union[str, None] = "combined"):
         """Set the parse mode to be used globally by the client.
 
@@ -1193,12 +1211,6 @@ class Client(Methods, BaseClient):
                     app.set_parse_mode()
                     app.send_message("haskell", "5. **markdown** and <i>html</i>")
         """
-
-        if parse_mode not in self.PARSE_MODES:
-            raise ValueError('parse_mode must be one of {} or None. Not "{}"'.format(
-                ", ".join('"{}"'.format(m) for m in self.PARSE_MODES[:-1]),
-                parse_mode
-            ))
 
         self.parse_mode = parse_mode
 
@@ -1409,7 +1421,7 @@ class Client(Methods, BaseClient):
         if self.takeout_id:
             data = functions.InvokeWithTakeout(takeout_id=self.takeout_id, query=data)
 
-        r = await self.session.send(data, retries, timeout)
+        r = await self.session.send(data, retries, timeout, self.sleep_threshold)
 
         self.fetch_peers(getattr(r, "users", []))
         self.fetch_peers(getattr(r, "chats", []))
@@ -1531,7 +1543,7 @@ class Client(Methods, BaseClient):
             if not include:
                 for path in sorted(Path(root.replace(".", "/")).rglob("*.py")):
                     module_path = '.'.join(path.parent.parts + (path.stem,))
-                    module = reload(import_module(module_path))
+                    module = import_module(module_path)
 
                     for name in vars(module).keys():
                         # noinspection PyBroadException
@@ -1553,7 +1565,7 @@ class Client(Methods, BaseClient):
                     warn_non_existent_functions = True
 
                     try:
-                        module = reload(import_module(module_path))
+                        module = import_module(module_path)
                     except ImportError:
                         log.warning('[{}] [LOAD] Ignoring non-existent module "{}"'.format(
                             self.session_name, module_path))
@@ -1630,38 +1642,6 @@ class Client(Methods, BaseClient):
                 log.warning('[{}] No plugin loaded from "{}"'.format(
                     self.session_name, root))
 
-    # def get_initial_dialogs_chunk(self, offset_date: int = 0):
-    #     while True:
-    #         try:
-    #             r = self.send(
-    #                 functions.messages.GetDialogs(
-    #                     offset_date=offset_date,
-    #                     offset_id=0,
-    #                     offset_peer=types.InputPeerEmpty(),
-    #                     limit=self.DIALOGS_AT_ONCE,
-    #                     hash=0,
-    #                     exclude_pinned=True
-    #                 )
-    #             )
-    #         except FloodWait as e:
-    #             log.warning("get_dialogs flood: waiting {} seconds".format(e.x))
-    #             time.sleep(e.x)
-    #         else:
-    #             log.info("Total peers: {}".format(self.storage.peers_count))
-    #             return r
-    #
-    # def get_initial_dialogs(self):
-    #     self.send(functions.messages.GetPinnedDialogs(folder_id=0))
-    #
-    #     dialogs = self.get_initial_dialogs_chunk()
-    #     offset_date = utils.get_offset_date(dialogs)
-    #
-    #     while len(dialogs.dialogs) == self.DIALOGS_AT_ONCE:
-    #         dialogs = self.get_initial_dialogs_chunk(offset_date)
-    #         offset_date = utils.get_offset_date(dialogs)
-    #
-    #     self.get_initial_dialogs_chunk()
-
     async def resolve_peer(self, peer_id: Union[int, str]):
         """Get the InputPeer of a known peer id.
         Useful whenever an InputPeer type is required.
@@ -1689,7 +1669,7 @@ class Client(Methods, BaseClient):
         try:
             return self.storage.get_peer_by_id(peer_id)
         except KeyError:
-            if type(peer_id) is str:
+            if isinstance(peer_id, str):
                 if peer_id in ("self", "me"):
                     return types.InputPeerSelf()
 
@@ -1752,13 +1732,14 @@ class Client(Methods, BaseClient):
             except KeyError:
                 raise PeerIdInvalid
 
-    async def save_file(self,
-                        path: str,
-                        file_id: int = None,
-                        file_part: int = 0,
-                        progress: callable = None,
-                        progress_args: tuple = ()
-                        ):
+    async def save_file(
+        self,
+        path: Union[str, BinaryIO],
+        file_id: int = None,
+        file_part: int = 0,
+        progress: callable = None,
+        progress_args: tuple = ()
+    ):
         """Upload a file onto Telegram servers, without actually sending the message to anyone.
         Useful whenever an InputFile type is required.
 
@@ -1806,6 +1787,8 @@ class Client(Methods, BaseClient):
         Raises:
             RPCError: In case of a Telegram RPC error.
         """
+        if path is None:
+            return None
 
         async def worker(session):
             while True:
@@ -1820,7 +1803,19 @@ class Client(Methods, BaseClient):
                     logging.error(e)
 
         part_size = 512 * 1024
-        file_size = os.path.getsize(path)
+
+        if isinstance(path, str):
+            fp = open(path, "rb")
+        elif isinstance(path, io.IOBase):
+            fp = path
+        else:
+            raise ValueError("Invalid file. Expected a file path as string or a binary (not text) file pointer")
+
+        file_name = fp.name
+
+        fp.seek(0, os.SEEK_END)
+        file_size = fp.tell()
+        fp.seek(0)
 
         if file_size == 0:
             raise ValueError("File size equals to 0 B")
@@ -1843,11 +1838,11 @@ class Client(Methods, BaseClient):
             for session in pool:
                 await session.start()
 
-            with open(path, "rb") as f:
-                f.seek(part_size * file_part)
+            with fp:
+                fp.seek(part_size * file_part)
 
                 while True:
-                    chunk = f.read(part_size)
+                    chunk = fp.read(part_size)
 
                     if not chunk:
                         if not is_big:
@@ -1889,14 +1884,14 @@ class Client(Methods, BaseClient):
                 return types.InputFileBig(
                     id=file_id,
                     parts=file_total_parts,
-                    name=os.path.basename(path),
+                    name=file_name,
 
                 )
             else:
                 return types.InputFile(
                     id=file_id,
                     parts=file_total_parts,
-                    name=os.path.basename(path),
+                    name=file_name,
                     md5_checksum=md5_sum
                 )
         finally:
