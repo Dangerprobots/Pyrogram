@@ -50,8 +50,8 @@ class BaseClient:
 
     INVITE_LINK_RE = re.compile(r"^(?:https?://)?(?:www\.)?(?:t(?:elegram)?\.(?:org|me|dog)/joinchat/)([\w-]+)$")
     DIALOGS_AT_ONCE = 100
-    UPDATES_WORKERS = 4
-    DOWNLOAD_WORKERS = 4
+    UPDATES_WORKERS = 8
+    DOWNLOAD_WORKERS = 8
     OFFLINE_SLEEP = 900
     WORKERS = 4
     WORKDIR = PARENT_DIR
