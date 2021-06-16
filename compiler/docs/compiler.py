@@ -142,6 +142,7 @@ def pyrogram_api():
         Messages
             send_message
             forward_messages
+            copy_message
             send_photo
             send_audio
             send_document
@@ -417,6 +418,7 @@ def pyrogram_api():
             Message.delete
             Message.download
             Message.forward
+            Message.copy
             Message.pin
             Message.edit_text
             Message.edit_caption
