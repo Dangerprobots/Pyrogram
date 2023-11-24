@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -16,79 +16,107 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
 
+import asyncio
 import ipaddress
 import logging
 import socket
-import time
+from concurrent.futures import ThreadPoolExecutor
 
-try:
-    import socks
-except ImportError as e:
-    e.msg = (
-        "PySocks is missing and Pyrogram can't run without. "
-        "Please install it using \"pip3 install pysocks\"."
-    )
-
-    raise e
+import socks
 
 log = logging.getLogger(__name__)
 
 
-class TCP(socks.socksocket):
+class TCP:
+    TIMEOUT = 10
+
     def __init__(self, ipv6: bool, proxy: dict):
-        if proxy.get("enabled", False):
-            hostname = proxy.get("hostname", None)
-            port = proxy.get("port", None)
+        self.socket = None
+
+        self.reader = None
+        self.writer = None
+
+        self.lock = asyncio.Lock()
+        self.loop = asyncio.get_event_loop()
+
+        self.proxy = proxy
+
+        if proxy:
+            hostname = proxy.get("hostname")
 
             try:
                 ip_address = ipaddress.ip_address(hostname)
             except ValueError:
-                super().__init__(socket.AF_INET)
+                self.socket = socks.socksocket(socket.AF_INET)
             else:
                 if isinstance(ip_address, ipaddress.IPv6Address):
-                    super().__init__(socket.AF_INET6)
+                    self.socket = socks.socksocket(socket.AF_INET6)
                 else:
-                    super().__init__(socket.AF_INET)
+                    self.socket = socks.socksocket(socket.AF_INET)
 
-            self.set_proxy(
-                proxy_type=socks.SOCKS5,
+            self.socket.set_proxy(
+                proxy_type=getattr(socks, proxy.get("scheme").upper()),
                 addr=hostname,
-                port=port,
+                port=proxy.get("port", None),
                 username=proxy.get("username", None),
                 password=proxy.get("password", None)
             )
 
-            log.info("Using proxy {}:{}".format(hostname, port))
+            self.socket.settimeout(TCP.TIMEOUT)
+
+            log.info("Using proxy %s", hostname)
         else:
-            super().__init__(
+            self.socket = socket.socket(
                 socket.AF_INET6 if ipv6
                 else socket.AF_INET
             )
 
-        self.settimeout(10)
+            self.socket.setblocking(False)
 
-    def close(self):
+    async def connect(self, address: tuple):
+        if self.proxy:
+            with ThreadPoolExecutor(1) as executor:
+                await self.loop.run_in_executor(executor, self.socket.connect, address)
+        else:
+            try:
+                await asyncio.wait_for(asyncio.get_event_loop().sock_connect(self.socket, address), TCP.TIMEOUT)
+            except asyncio.TimeoutError:  # Re-raise as TimeoutError. asyncio.TimeoutError is deprecated in 3.11
+                raise TimeoutError("Connection timed out")
+
+        self.reader, self.writer = await asyncio.open_connection(sock=self.socket)
+
+    async def close(self):
         try:
-            self.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        finally:
-            # A tiny sleep placed here helps avoiding .recv(n) hanging until the timeout.
-            # This is a workaround that seems to fix the occasional delayed stop of a client.
-            time.sleep(0.001)
-            super().close()
+            if self.writer is not None:
+                self.writer.close()
+                await asyncio.wait_for(self.writer.wait_closed(), TCP.TIMEOUT)
+        except Exception as e:
+            log.info("Close exception: %s %s", type(e).__name__, e)
 
-    def recvall(self, length: int) -> bytes or None:
+    async def send(self, data: bytes):
+        async with self.lock:
+            try:
+                if self.writer is not None:
+                    self.writer.write(data)
+                    await self.writer.drain()
+            except Exception as e:
+                log.info("Send exception: %s %s", type(e).__name__, e)
+                raise OSError(e)
+
+    async def recv(self, length: int = 0):
         data = b""
 
         while len(data) < length:
             try:
-                packet = super().recv(length - len(data))
-            except OSError:
+                chunk = await asyncio.wait_for(
+                    self.reader.read(length - len(data)),
+                    TCP.TIMEOUT
+                )
+            except (OSError, asyncio.TimeoutError):
                 return None
             else:
-                if packet:
-                    data += packet
+                if chunk:
+                    data += chunk
                 else:
                     return None
 

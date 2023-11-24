@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -16,14 +16,13 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
 
-from pyrogram.api.functions import Ping
-from pyrogram.api.types import MsgsAck, HttpWait
-
-from pyrogram.api.core import Message, MsgContainer, TLObject
+from pyrogram.raw.core import Message, MsgContainer, TLObject
+from pyrogram.raw.functions import Ping
+from pyrogram.raw.types import MsgsAck, HttpWait
 from .msg_id import MsgId
 from .seq_no import SeqNo
 
-not_content_related = [Ping, HttpWait, MsgsAck, MsgContainer]
+not_content_related = (Ping, HttpWait, MsgsAck, MsgContainer)
 
 
 class MsgFactory:
@@ -34,6 +33,6 @@ class MsgFactory:
         return Message(
             body,
             MsgId(),
-            self.seq_no(type(body) not in not_content_related),
+            self.seq_no(not isinstance(body, not_content_related)),
             len(body)
         )

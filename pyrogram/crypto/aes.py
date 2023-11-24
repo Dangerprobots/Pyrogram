@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -26,109 +26,105 @@ try:
     log.info("Using TgCrypto")
 
 
-    class AES:
-        @classmethod
-        def ige256_encrypt(cls, data: bytes, key: bytes, iv: bytes) -> bytes:
-            return tgcrypto.ige256_encrypt(data, key, iv)
+    def ige256_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
+        return tgcrypto.ige256_encrypt(data, key, iv)
 
-        @classmethod
-        def ige256_decrypt(cls, data: bytes, key: bytes, iv: bytes) -> bytes:
-            return tgcrypto.ige256_decrypt(data, key, iv)
 
-        @staticmethod
-        def ctr256_encrypt(data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
-            return tgcrypto.ctr256_encrypt(data, key, iv, state or bytearray(1))
+    def ige256_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
+        return tgcrypto.ige256_decrypt(data, key, iv)
 
-        @staticmethod
-        def ctr256_decrypt(data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
-            return tgcrypto.ctr256_decrypt(data, key, iv, state or bytearray(1))
 
-        @staticmethod
-        def xor(a: bytes, b: bytes) -> bytes:
-            return int.to_bytes(
-                int.from_bytes(a, "big") ^ int.from_bytes(b, "big"),
-                len(a),
-                "big",
-            )
+    def ctr256_encrypt(data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
+        return tgcrypto.ctr256_encrypt(data, key, iv, state or bytearray(1))
+
+
+    def ctr256_decrypt(data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
+        return tgcrypto.ctr256_decrypt(data, key, iv, state or bytearray(1))
+
+
+    def xor(a: bytes, b: bytes) -> bytes:
+        return int.to_bytes(
+            int.from_bytes(a, "big") ^ int.from_bytes(b, "big"),
+            len(a),
+            "big",
+        )
 except ImportError:
     import pyaes
 
     log.warning(
         "TgCrypto is missing! "
         "Pyrogram will work the same, but at a much slower speed. "
-        "More info: https://docs.pyrogram.org/topics/tgcrypto"
+        "More info: https://docs.pyrogram.org/topics/speedups"
     )
 
 
-    class AES:
-        @classmethod
-        def ige256_encrypt(cls, data: bytes, key: bytes, iv: bytes) -> bytes:
-            return cls.ige(data, key, iv, True)
+    def ige256_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
+        return ige(data, key, iv, True)
 
-        @classmethod
-        def ige256_decrypt(cls, data: bytes, key: bytes, iv: bytes) -> bytes:
-            return cls.ige(data, key, iv, False)
 
-        @classmethod
-        def ctr256_encrypt(cls, data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
-            return cls.ctr(data, key, iv, state or bytearray(1))
+    def ige256_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
+        return ige(data, key, iv, False)
 
-        @classmethod
-        def ctr256_decrypt(cls, data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
-            return cls.ctr(data, key, iv, state or bytearray(1))
 
-        @staticmethod
-        def xor(a: bytes, b: bytes) -> bytes:
-            return int.to_bytes(
-                int.from_bytes(a, "big") ^ int.from_bytes(b, "big"),
-                len(a),
-                "big",
-            )
+    def ctr256_encrypt(data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
+        return ctr(data, key, iv, state or bytearray(1))
 
-        @classmethod
-        def ige(cls, data: bytes, key: bytes, iv: bytes, encrypt: bool) -> bytes:
-            cipher = pyaes.AES(key)
 
-            iv_1 = iv[:16]
-            iv_2 = iv[16:]
+    def ctr256_decrypt(data: bytes, key: bytes, iv: bytearray, state: bytearray = None) -> bytes:
+        return ctr(data, key, iv, state or bytearray(1))
 
-            data = [data[i: i + 16] for i in range(0, len(data), 16)]
 
-            if encrypt:
-                for i, chunk in enumerate(data):
-                    iv_1 = data[i] = cls.xor(cipher.encrypt(cls.xor(chunk, iv_1)), iv_2)
-                    iv_2 = chunk
-            else:
-                for i, chunk in enumerate(data):
-                    iv_2 = data[i] = cls.xor(cipher.decrypt(cls.xor(chunk, iv_2)), iv_1)
-                    iv_1 = chunk
+    def xor(a: bytes, b: bytes) -> bytes:
+        return int.to_bytes(
+            int.from_bytes(a, "big") ^ int.from_bytes(b, "big"),
+            len(a),
+            "big",
+        )
 
-            return b"".join(data)
 
-        @classmethod
-        def ctr(cls, data: bytes, key: bytes, iv: bytearray, state: bytearray) -> bytes:
-            cipher = pyaes.AES(key)
+    def ige(data: bytes, key: bytes, iv: bytes, encrypt: bool) -> bytes:
+        cipher = pyaes.AES(key)
 
-            out = bytearray(data)
-            chunk = cipher.encrypt(iv)
+        iv_1 = iv[:16]
+        iv_2 = iv[16:]
 
-            for i in range(0, len(data), 16):
-                for j in range(0, min(len(data) - i, 16)):
-                    out[i + j] ^= chunk[state[0]]
+        data = [data[i: i + 16] for i in range(0, len(data), 16)]
 
-                    state[0] += 1
+        if encrypt:
+            for i, chunk in enumerate(data):
+                iv_1 = data[i] = xor(cipher.encrypt(xor(chunk, iv_1)), iv_2)
+                iv_2 = chunk
+        else:
+            for i, chunk in enumerate(data):
+                iv_2 = data[i] = xor(cipher.decrypt(xor(chunk, iv_2)), iv_1)
+                iv_1 = chunk
 
-                    if state[0] >= 16:
-                        state[0] = 0
+        return b"".join(data)
 
-                    if state[0] == 0:
-                        for k in range(15, -1, -1):
-                            try:
-                                iv[k] += 1
-                                break
-                            except ValueError:
-                                iv[k] = 0
 
-                        chunk = cipher.encrypt(iv)
+    def ctr(data: bytes, key: bytes, iv: bytearray, state: bytearray) -> bytes:
+        cipher = pyaes.AES(key)
 
-            return out
+        out = bytearray(data)
+        chunk = cipher.encrypt(iv)
+
+        for i in range(0, len(data), 16):
+            for j in range(0, min(len(data) - i, 16)):
+                out[i + j] ^= chunk[state[0]]
+
+                state[0] += 1
+
+                if state[0] >= 16:
+                    state[0] = 0
+
+                if state[0] == 0:
+                    for k in range(15, -1, -1):
+                        try:
+                            iv[k] += 1
+                            break
+                        except ValueError:
+                            iv[k] = 0
+
+                    chunk = cipher.encrypt(iv)
+
+        return out

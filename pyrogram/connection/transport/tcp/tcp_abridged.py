@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -17,6 +17,7 @@
 #  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
+from typing import Optional
 
 from .tcp import TCP
 
@@ -27,30 +28,30 @@ class TCPAbridged(TCP):
     def __init__(self, ipv6: bool, proxy: dict):
         super().__init__(ipv6, proxy)
 
-    def connect(self, address: tuple):
-        super().connect(address)
-        super().sendall(b"\xef")
+    async def connect(self, address: tuple):
+        await super().connect(address)
+        await super().send(b"\xef")
 
-    def sendall(self, data: bytes, *args):
+    async def send(self, data: bytes, *args):
         length = len(data) // 4
 
-        super().sendall(
+        await super().send(
             (bytes([length])
              if length <= 126
              else b"\x7f" + length.to_bytes(3, "little"))
             + data
         )
 
-    def recvall(self, length: int = 0) -> bytes or None:
-        length = super().recvall(1)
+    async def recv(self, length: int = 0) -> Optional[bytes]:
+        length = await super().recv(1)
 
         if length is None:
             return None
 
         if length == b"\x7f":
-            length = super().recvall(3)
+            length = await super().recv(3)
 
             if length is None:
                 return None
 
-        return super().recvall(int.from_bytes(length, "little") * 4)
+        return await super().recv(int.from_bytes(length, "little") * 4)

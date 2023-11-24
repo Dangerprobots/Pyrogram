@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -16,20 +16,20 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
 
-from threading import Lock
-from time import time
+import logging
+import time
+
+log = logging.getLogger(__name__)
 
 
 class MsgId:
     last_time = 0
     offset = 0
-    lock = Lock()
 
     def __new__(cls) -> int:
-        with cls.lock:
-            now = time()
-            cls.offset = cls.offset + 4 if now == cls.last_time else 0
-            msg_id = int(now * 2 ** 32) + cls.offset
-            cls.last_time = now
+        now = int(time.time())
+        cls.offset = (cls.offset + 4) if now == cls.last_time else 0
+        msg_id = (now * 2 ** 32) + cls.offset
+        cls.last_time = now
 
-            return msg_id
+        return msg_id

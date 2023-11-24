@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -25,11 +25,13 @@ HOME = "compiler/docs"
 DESTINATION = "docs/source/telegram"
 PYROGRAM_API_DEST = "docs/source/api"
 
-FUNCTIONS_PATH = "pyrogram/api/functions"
-TYPES_PATH = "pyrogram/api/types"
+FUNCTIONS_PATH = "pyrogram/raw/functions"
+TYPES_PATH = "pyrogram/raw/types"
+BASE_PATH = "pyrogram/raw/base"
 
 FUNCTIONS_BASE = "functions"
 TYPES_BASE = "types"
+BASE_BASE = "base"
 
 
 def snek(s: str):
@@ -63,14 +65,20 @@ def generate(source_path, base):
                 if level:
                     full_path = base + "/" + full_path
 
+                namespace = path.split("/")[-1]
+                if namespace in ["base", "types", "functions"]:
+                    namespace = ""
+
+                full_name = f"{(namespace + '.') if namespace else ''}{name}"
+
                 os.makedirs(os.path.dirname(DESTINATION + "/" + full_path), exist_ok=True)
 
                 with open(DESTINATION + "/" + full_path, "w", encoding="utf-8") as f:
                     f.write(
                         page_template.format(
-                            title=name,
-                            title_markup="=" * len(name),
-                            full_class_path="pyrogram.api.{}".format(
+                            title=full_name,
+                            title_markup="=" * len(full_name),
+                            full_class_path="pyrogram.raw.{}".format(
                                 ".".join(full_path.split("/")[:-1]) + "." + name
                             )
                         )
@@ -88,18 +96,18 @@ def generate(source_path, base):
         entities = []
 
         for i in v:
-            entities.append(snek(i).replace("_", "-"))
+            entities.append(f'{i} <{snek(i).replace("_", "-")}>')
 
         if k != base:
             inner_path = base + "/" + k + "/index" + ".rst"
-            module = "pyrogram.api.{}.{}".format(base, k)
+            module = "pyrogram.raw.{}.{}".format(base, k)
         else:
             for i in sorted(list(all_entities), reverse=True):
                 if i != base:
                     entities.insert(0, "{0}/index".format(i))
 
             inner_path = base + "/index" + ".rst"
-            module = "pyrogram.api.{}".format(base)
+            module = "pyrogram.raw.{}".format(base)
 
         with open(DESTINATION + "/" + inner_path, "w", encoding="utf-8") as f:
             if k == base:
@@ -128,7 +136,6 @@ def pyrogram_api():
         utilities="""
         Utilities
             start
-            idle
             stop
             run
             restart
@@ -142,6 +149,8 @@ def pyrogram_api():
         Messages
             send_message
             forward_messages
+            copy_message
+            copy_media_group
             send_photo
             send_audio
             send_document
@@ -155,6 +164,7 @@ def pyrogram_api():
             send_venue
             send_contact
             send_cached_media
+            send_reaction
             edit_message_text
             edit_message_caption
             edit_message_media
@@ -166,28 +176,35 @@ def pyrogram_api():
             send_chat_action
             delete_messages
             get_messages
-            get_history
-            get_history_count
-            read_history
-            iter_history
+            get_media_group
+            get_chat_history
+            get_chat_history_count
+            read_chat_history
             send_poll
             vote_poll
             stop_poll
             retract_vote
             send_dice
             search_messages
+            search_messages_count
+            search_global
+            search_global_count
             download_media
+            stream_media
+            get_discussion_message
+            get_discussion_replies
+            get_discussion_replies_count
+            get_custom_emoji_stickers
         """,
         chats="""
         Chats
             join_chat
             leave_chat
-            kick_chat_member
+            ban_chat_member
             unban_chat_member
             restrict_chat_member
             promote_chat_member
             set_administrator_title
-            export_chat_invite_link
             set_chat_photo
             delete_chat_photo
             set_chat_title
@@ -195,16 +212,14 @@ def pyrogram_api():
             set_chat_permissions
             pin_chat_message
             unpin_chat_message
+            unpin_all_chat_messages
             get_chat
             get_chat_member
             get_chat_members
             get_chat_members_count
-            iter_chat_members
             get_dialogs
-            iter_dialogs
             get_dialogs_count
-            update_chat_username
-            get_common_chats
+            set_chat_username
             get_nearby_chats
             archive_chats
             unarchive_chats
@@ -214,31 +229,61 @@ def pyrogram_api():
             create_supergroup
             delete_channel
             delete_supergroup
+            delete_user_history
             set_slow_mode
+            mark_chat_unread
+            get_chat_event_log
+            get_chat_online_count
+            get_send_as_chats
+            set_send_as_chat
+            set_chat_protected_content
         """,
         users="""
         Users
             get_me
             get_users
-            get_profile_photos
-            get_profile_photos_count
-            iter_profile_photos
+            get_chat_photos
+            get_chat_photos_count
             set_profile_photo
             delete_profile_photos
-            update_username
+            set_username
             update_profile
             block_user
             unblock_user
+            get_common_chats
+            get_default_emoji_statuses
+            set_emoji_status
+        """,
+        invite_links="""
+        Invite Links
+            get_chat_invite_link
+            export_chat_invite_link
+            create_chat_invite_link
+            edit_chat_invite_link
+            revoke_chat_invite_link
+            delete_chat_invite_link
+            get_chat_invite_link_joiners
+            get_chat_invite_link_joiners_count
+            get_chat_admin_invite_links
+            get_chat_admin_invite_links_count
+            get_chat_admins_with_invite_links
+            get_chat_join_requests
+            delete_chat_admin_invite_links
+            approve_chat_join_request
+            approve_all_chat_join_requests
+            decline_chat_join_request
+            decline_all_chat_join_requests
         """,
         contacts="""
         Contacts
-            add_contacts
+            add_contact
+            delete_contacts
+            import_contacts
             get_contacts
             get_contacts_count
-            delete_contacts
         """,
         password="""
-        Pssword
+        Password
             enable_cloud_password
             change_cloud_password
             remove_cloud_password
@@ -253,6 +298,14 @@ def pyrogram_api():
             send_game
             set_game_score
             get_game_high_scores
+            set_bot_commands
+            get_bot_commands
+            delete_bot_commands
+            set_bot_default_privileges
+            get_bot_default_privileges
+            set_chat_menu_button
+            get_chat_menu_button
+            answer_web_app_query
         """,
         authorization="""
         Authorization
@@ -263,6 +316,7 @@ def pyrogram_api():
             send_code
             resend_code
             sign_in
+            sign_in_bot
             sign_up
             get_password_hint
             check_password
@@ -273,7 +327,7 @@ def pyrogram_api():
         """,
         advanced="""
         Advanced
-            send
+            invoke
             resolve_peer
             save_file
         """
@@ -301,6 +355,15 @@ def pyrogram_api():
                     f2.write(title + "\n" + "=" * len(title) + "\n\n")
                     f2.write(".. automethod:: pyrogram.Client.{}()".format(method))
 
+            functions = ["idle", "compose"]
+
+            for func in functions:
+                with open(root + "/{}.rst".format(func), "w") as f2:
+                    title = "{}()".format(func)
+
+                    f2.write(title + "\n" + "=" * len(title) + "\n\n")
+                    f2.write(".. autofunction:: pyrogram.{}()".format(func))
+
         f.write(template.format(**fmt_keys))
 
     # Types
@@ -314,8 +377,17 @@ def pyrogram_api():
             ChatPhoto
             ChatMember
             ChatPermissions
+            ChatPrivileges
+            ChatInviteLink
+            ChatAdminWithInviteLinks
+            ChatEvent
+            ChatEventFilter
+            ChatMemberUpdated
+            ChatJoinRequest
+            ChatJoiner
             Dialog
             Restriction
+            EmojiStatus
         """,
         messages_media="""
         Messages & Media
@@ -338,18 +410,45 @@ def pyrogram_api():
             Poll
             PollOption
             Dice
+            Reaction
+            VideoChatScheduled
+            VideoChatStarted
+            VideoChatEnded
+            VideoChatMembersInvited
+            WebAppData
+            MessageReactions
+            ChatReactions
         """,
-        bots_keyboard="""
-        Bots & Keyboards
+        bot_keyboards="""
+        Bot keyboards
             ReplyKeyboardMarkup
             KeyboardButton
             ReplyKeyboardRemove
             InlineKeyboardMarkup
             InlineKeyboardButton
+            LoginUrl
             ForceReply
             CallbackQuery
             GameHighScore
             CallbackGame
+            WebAppInfo
+            MenuButton
+            MenuButtonCommands
+            MenuButtonWebApp
+            MenuButtonDefault
+            SentWebAppMessage
+        """,
+        bot_commands="""
+        Bot commands
+            BotCommand
+            BotCommandScope
+            BotCommandScopeDefault
+            BotCommandScopeAllPrivateChats
+            BotCommandScopeAllGroupChats
+            BotCommandScopeAllChatAdministrators
+            BotCommandScopeChat
+            BotCommandScopeChatAdministrators
+            BotCommandScopeChatMember
         """,
         input_media="""
         Input Media
@@ -365,9 +464,23 @@ def pyrogram_api():
         Inline Mode
             InlineQuery
             InlineQueryResult
+            InlineQueryResultCachedAudio
+            InlineQueryResultCachedDocument
+            InlineQueryResultCachedAnimation
+            InlineQueryResultCachedPhoto
+            InlineQueryResultCachedSticker
+            InlineQueryResultCachedVideo
+            InlineQueryResultCachedVoice
             InlineQueryResultArticle
-            InlineQueryResultPhoto
+            InlineQueryResultAudio
+            InlineQueryResultContact
+            InlineQueryResultDocument
             InlineQueryResultAnimation
+            InlineQueryResultLocation
+            InlineQueryResultPhoto
+            InlineQueryResultVenue
+            InlineQueryResultVideo
+            InlineQueryResultVoice
             ChosenInlineResult
         """,
         input_message_content="""
@@ -404,7 +517,7 @@ def pyrogram_api():
                     title = "{}".format(type)
 
                     f2.write(title + "\n" + "=" * len(title) + "\n\n")
-                    f2.write(".. autoclass:: pyrogram.{}()".format(type))
+                    f2.write(".. autoclass:: pyrogram.types.{}()\n".format(type))
 
         f.write(template.format(**fmt_keys))
 
@@ -417,11 +530,15 @@ def pyrogram_api():
             Message.delete
             Message.download
             Message.forward
+            Message.copy
             Message.pin
+            Message.unpin
+            Message.edit
             Message.edit_text
             Message.edit_caption
             Message.edit_media
             Message.edit_reply_markup
+            Message.reply
             Message.reply_text
             Message.reply_animation
             Message.reply_audio
@@ -440,6 +557,8 @@ def pyrogram_api():
             Message.reply_video
             Message.reply_video_note
             Message.reply_voice
+            Message.get_media_group
+            Message.react
         """,
         chat="""
         Chat
@@ -448,16 +567,18 @@ def pyrogram_api():
             Chat.set_title
             Chat.set_description
             Chat.set_photo
-            Chat.kick_member
+            Chat.ban_member
             Chat.unban_member
             Chat.restrict_member
             Chat.promote_member
             Chat.get_member
             Chat.get_members
-            Chat.iter_members
             Chat.add_members
             Chat.join
             Chat.leave
+            Chat.mark_unread
+            Chat.set_protected_content
+            Chat.unpin_all_messages
         """,
         user="""
         User
@@ -477,6 +598,11 @@ def pyrogram_api():
         inline_query="""
         InlineQuery
             InlineQuery.answer
+        """,
+        chat_join_request="""
+        ChatJoinRequest
+            ChatJoinRequest.approve
+            ChatJoinRequest.decline
         """
     )
 
@@ -505,7 +631,7 @@ def pyrogram_api():
                     title = "{}()".format(bm)
 
                     f2.write(title + "\n" + "=" * len(title) + "\n\n")
-                    f2.write(".. automethod:: pyrogram.{}()".format(bm))
+                    f2.write(".. automethod:: pyrogram.types.{}()".format(bm))
 
         f.write(template.format(**fmt_keys))
 
@@ -524,12 +650,14 @@ def start():
 
     generate(TYPES_PATH, TYPES_BASE)
     generate(FUNCTIONS_PATH, FUNCTIONS_BASE)
+    generate(BASE_PATH, BASE_BASE)
     pyrogram_api()
 
 
 if "__main__" == __name__:
-    FUNCTIONS_PATH = "../../pyrogram/api/functions"
-    TYPES_PATH = "../../pyrogram/api/types"
+    FUNCTIONS_PATH = "../../pyrogram/raw/functions"
+    TYPES_PATH = "../../pyrogram/raw/types"
+    BASE_PATH = "../../pyrogram/raw/base"
     HOME = "."
     DESTINATION = "../../docs/source/telegram"
     PYROGRAM_API_DEST = "../../docs/source/api"

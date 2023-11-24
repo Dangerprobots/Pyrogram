@@ -1,12 +1,11 @@
 Bound Methods
 =============
 
-Some Pyrogram types define what are called bound methods. Bound methods are functions attached to a class which are
-accessed via an instance of that class. They make it even easier to call specific methods by automatically inferring
+Some Pyrogram types define what are called bound methods. Bound methods are functions attached to a type which are
+accessed via an instance of that type. They make it even easier to call specific methods by automatically inferring
 some of the required arguments.
 
 .. code-block:: python
-    :emphasize-lines: 8
 
     from pyrogram import Client
 
@@ -20,13 +19,9 @@ some of the required arguments.
 
     app.run()
 
-.. contents:: Contents
-    :backlinks: none
-    :local:
-
 -----
 
-.. currentmodule:: pyrogram
+.. currentmodule:: pyrogram.types
 
 Message
 -------
@@ -92,3 +87,17 @@ InlineQuery
     :hidden:
 
     {inline_query_toctree}
+
+ChatJoinRequest
+---------------
+
+.. hlist::
+    :columns: 2
+
+    {chat_join_request_hlist}
+
+.. toctree::
+    :hidden:
+
+    {chat_join_request_toctree}
+

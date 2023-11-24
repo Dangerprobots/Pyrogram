@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -18,9 +18,11 @@
 
 import logging
 import os
+from typing import Optional
 
+import pyrogram
+from pyrogram.crypto import aes
 from .tcp import TCP
-from ....crypto.aes import AES
 
 log = logging.getLogger(__name__)
 
@@ -34,13 +36,13 @@ class TCPAbridgedO(TCP):
         self.encrypt = None
         self.decrypt = None
 
-    def connect(self, address: tuple):
-        super().connect(address)
+    async def connect(self, address: tuple):
+        await super().connect(address)
 
         while True:
             nonce = bytearray(os.urandom(64))
 
-            if nonce[0] != b"\xef" and nonce[:4] not in self.RESERVED and nonce[4:4] != b"\x00" * 4:
+            if bytes([nonce[0]]) != b"\xef" and nonce[:4] not in self.RESERVED and nonce[4:8] != b"\x00" * 4:
                 nonce[56] = nonce[57] = nonce[58] = nonce[59] = 0xef
                 break
 
@@ -49,42 +51,36 @@ class TCPAbridgedO(TCP):
         self.encrypt = (nonce[8:40], nonce[40:56], bytearray(1))
         self.decrypt = (temp[0:32], temp[32:48], bytearray(1))
 
-        nonce[56:64] = AES.ctr256_encrypt(nonce, *self.encrypt)[56:64]
+        nonce[56:64] = aes.ctr256_encrypt(nonce, *self.encrypt)[56:64]
 
-        super().sendall(nonce)
+        await super().send(nonce)
 
-    def sendall(self, data: bytes, *args):
+    async def send(self, data: bytes, *args):
         length = len(data) // 4
+        data = (bytes([length]) if length <= 126 else b"\x7f" + length.to_bytes(3, "little")) + data
+        payload = await self.loop.run_in_executor(pyrogram.crypto_executor, aes.ctr256_encrypt, data, *self.encrypt)
 
-        super().sendall(
-            AES.ctr256_encrypt(
-                (bytes([length])
-                 if length <= 126
-                 else b"\x7f" + length.to_bytes(3, "little"))
-                + data,
-                *self.encrypt
-            )
-        )
+        await super().send(payload)
 
-    def recvall(self, length: int = 0) -> bytes or None:
-        length = super().recvall(1)
+    async def recv(self, length: int = 0) -> Optional[bytes]:
+        length = await super().recv(1)
 
         if length is None:
             return None
 
-        length = AES.ctr256_decrypt(length, *self.decrypt)
+        length = aes.ctr256_decrypt(length, *self.decrypt)
 
         if length == b"\x7f":
-            length = super().recvall(3)
+            length = await super().recv(3)
 
             if length is None:
                 return None
 
-            length = AES.ctr256_decrypt(length, *self.decrypt)
+            length = aes.ctr256_decrypt(length, *self.decrypt)
 
-        data = super().recvall(int.from_bytes(length, "little") * 4)
+        data = await super().recv(int.from_bytes(length, "little") * 4)
 
         if data is None:
             return None
 
-        return AES.ctr256_decrypt(data, *self.decrypt)
+        return await self.loop.run_in_executor(pyrogram.crypto_executor, aes.ctr256_decrypt, data, *self.decrypt)

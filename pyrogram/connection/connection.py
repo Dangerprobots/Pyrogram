@@ -1,5 +1,5 @@
 #  Pyrogram - Telegram MTProto API Client Library for Python
-#  Copyright (C) 2017-2020 Dan <https://github.com/delivrance>
+#  Copyright (C) 2017-present Dan <https://github.com/delivrance>
 #
 #  This file is part of Pyrogram.
 #
@@ -16,68 +16,57 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with Pyrogram.  If not, see <http://www.gnu.org/licenses/>.
 
+import asyncio
 import logging
-import threading
-import time
+from typing import Optional
 
-from .transport import *
+from .transport import TCP, TCPAbridged
 from ..session.internals import DataCenter
 
 log = logging.getLogger(__name__)
 
 
 class Connection:
-    MAX_RETRIES = 3
+    MAX_CONNECTION_ATTEMPTS = 3
 
-    MODES = {
-        0: TCPFull,
-        1: TCPAbridged,
-        2: TCPIntermediate,
-        3: TCPAbridgedO,
-        4: TCPIntermediateO
-    }
-
-    def __init__(self, dc_id: int, test_mode: bool, ipv6: bool, proxy: dict, mode: int = 3):
+    def __init__(self, dc_id: int, test_mode: bool, ipv6: bool, proxy: dict, media: bool = False):
         self.dc_id = dc_id
         self.test_mode = test_mode
         self.ipv6 = ipv6
         self.proxy = proxy
-        self.address = DataCenter(dc_id, test_mode, ipv6)
-        self.mode = self.MODES.get(mode, TCPAbridged)
+        self.media = media
 
-        self.lock = threading.Lock()
-        self.connection = None
+        self.address = DataCenter(dc_id, test_mode, ipv6, media)
+        self.protocol: TCP = None
 
-    def connect(self):
-        for i in range(Connection.MAX_RETRIES):
-            self.connection = self.mode(self.ipv6, self.proxy)
+    async def connect(self):
+        for i in range(Connection.MAX_CONNECTION_ATTEMPTS):
+            self.protocol = TCPAbridged(self.ipv6, self.proxy)
 
             try:
                 log.info("Connecting...")
-                self.connection.connect(self.address)
+                await self.protocol.connect(self.address)
             except OSError as e:
-                log.warning(e)  # TODO: Remove
-                self.connection.close()
-                time.sleep(1)
+                log.warning("Unable to connect due to network issues: %s", e)
+                await self.protocol.close()
+                await asyncio.sleep(1)
             else:
-                log.info("Connected! {} DC{} - IPv{} - {}".format(
-                    "Test" if self.test_mode else "Production",
-                    self.dc_id,
-                    "6" if self.ipv6 else "4",
-                    self.mode.__name__
-                ))
+                log.info("Connected! %s DC%s%s - IPv%s",
+                         "Test" if self.test_mode else "Production",
+                         self.dc_id,
+                         " (media)" if self.media else "",
+                         "6" if self.ipv6 else "4")
                 break
         else:
             log.warning("Connection failed! Trying again...")
-            raise TimeoutError
+            raise ConnectionError
 
-    def close(self):
-        self.connection.close()
+    async def close(self):
+        await self.protocol.close()
         log.info("Disconnected")
 
-    def send(self, data: bytes):
-        with self.lock:
-            self.connection.sendall(data)
+    async def send(self, data: bytes):
+        await self.protocol.send(data)
 
-    def recv(self) -> bytes or None:
-        return self.connection.recvall()
+    async def recv(self) -> Optional[bytes]:
+        return await self.protocol.recv()
